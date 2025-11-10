@@ -1,0 +1,91 @@
+name: ORT-scan-test
+
+on: [pull_request, push, workflow_dispatch]
+
+# jobs:
+#   job1:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Step 1
+#         run: echo "This is job 1"
+
+#   job2:
+#     runs-on: ubuntu-latest
+#     needs: job1  # This job depends on job1
+#     steps:
+#       - name: Step 2
+#         run: echo "This is job 2, which runs after job 1"
+
+jobs:
+  ort-action-test-minimal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a Python requirements.txt
+        run: |
+          cat << 'EOF' > $FORGEJO_WORKSPACE/requirements.txt
+          click==6.7
+          Flask==1.0
+          itsdangerous==0.24
+          EOF
+      - name: Print current SHA
+        shell: bash
+        run: |
+          echo -e "\e[1;34m Run action on ${{ forgejo.sha }}..."
+          ls -all
+      - run: ls -la
+      - name: Run Forgejo Action for ORT
+        id: ort
+        uses: ${{ forgejo.server_url }}/${{ forgejo.repository }}@${{ forgejo.sha }}
+        with:
+          ort-config-repository: https://codefloe.com/tsteenbe/ort-config.git
+          # run: >
+          #   init,
+          #   setup-python,
+          #   setup-python-setuptools,
+          #   setup-python-inspector,
+          #   setup-ort,
+          #   cache-dependencies,
+          #   config-git-use-https,
+          #   labels,
+          #   analyzer,
+          #   evaluator,
+          #   advisor,
+          #   reporter,
+          #   upload-results,
+          #   print-action-vars
+          #   # - name: Debugging
+      - name: Print outputs of Forgejo Action for ORT
+        shell: bash
+        run: |
+          echo "ort-cli-advise-args: ${{ steps.ort.outputs.ort-cli-evaluate-args }}"
+          echo "ort-cli-analyze-args: ${{ steps.ort.outputs.ort-cli-analyze-args }}"
+          echo "ort-cli-evaluate-args: ${{ steps.ort.outputs.ort-cli-evaluate-args }}"
+          echo "ort-cli-report-args: ${{ steps.ort.outputs.ort-cli-report-args }}"
+          echo "ort-cli-scan-args: ${{ steps.ort.outputs.ort-cli-scan-args }}"
+          echo "ort-config-path: ${{ steps.ort.outputs.ort-config-path }}"
+          echo "ort-config-vcs-revision: ${{ steps.ort.outputs.ort-config-vcs-revision }}"
+          echo "ort-config-vcs-url: ${{ steps.ort.outputs.ort-config-url }}"
+          echo "ort-log-level: ${{ steps.ort.outputs.ort-log-level }}"
+          echo "ort-version: ${{ steps.ort.outputs.ort-version }}"
+          echo "results-advisor-path: ${{ steps.ort.outputs.results-advisor-path }}"
+          echo "results-analyzer-path: ${{ steps.ort.outputs.results-analyzer-path }}"
+          echo "results-evaluated-model-path: ${{ steps.ort.outputs.results-evaluated-model-path }}"
+          echo "results-evaluator-path: ${{ steps.ort.outputs.results-evaluator-path }}"
+          echo "results-html-report-path: ${{ steps.ort.outputs.results-html-report-path }}"
+          echo "results-path: ${{ steps.ort.outputs.results-path }}"
+          echo "results-sbom-cyclonedx-json-path: ${{ steps.ort.outputs.results-sbom-cyclonedx-json-path }}"
+          echo "results-sbom-cyclonedx-xml-path: ${{ steps.ort.outputs.results-sbom-cyclonedx-xml-path }}"
+          echo "results-sbom-spdx-json-path: ${{ steps.ort.outputs.results-sbom-spdx-json-path }}"
+          echo "results-sbom-spdx-yml-path: ${{ steps.ort.outputs.results-sbom-spdx-yml-path }}"
+          echo "results-scanner-path: ${{ steps.ort.outputs.results-scanner-path }}"
+          echo "results-web-app-path: ${{ steps.ort.outputs.results-web-app-path }}"
+          echo "sw-name: ${{ steps.ort.outputs.sw-name }}"
+          echo "sw-name-safe: ${{ steps.ort.outputs.sw-name-safe }}"
+          echo "sw-version: ${{ steps.ort.outputs.sw-version }}"
+      # - name: Debugging
+      #   id: ort-debug
+      #   shell: bash
+      #   run: |
+      #     ls -all $FORGEJO_WORKSPACE
+      #     echo -e "\e[1;31m Print environment variables..."
+      #     printenv
