@@ -273,7 +273,7 @@ runs:
         ORT_RESULTS_CURRENT_PATH="${ORT_RESULTS_PATH}/current-result.json"
         ORT_RESULTS_EVALUATED_MODEL_PATH="${ORT_RESULTS_PATH}/evaluated-model.json"
         ORT_RESULTS_EVALUATOR_PATH="${ORT_RESULTS_PATH}/evaluation-result.json"
-        ORT_RESULTS_HTML_REPORT_PATH="${ORT_RESULTS_HTML_REPORT_PATH}/ort-results/scan-report.html"
+        ORT_RESULTS_HTML_REPORT_PATH="${ORT_RESULTS_PATH}/ort-results/scan-report.html"
         ORT_RESULTS_SCANNER_PATH="${ORT_RESULTS_PATH}/scan-result.json"
         ORT_RESULTS_SBOM_CYCLONE_XML_PATH="${ORT_RESULTS_PATH}/bom.cyclonedx.xml"
         ORT_RESULTS_SBOM_CYCLONE_JSON_PATH="${ORT_RESULTS_PATH}/bom.cyclonedx.json"
@@ -300,6 +300,7 @@ runs:
         echo "ORT_CONFIG_PATH=${ORT_CONFIG_PATH}" >> "$FORGEJO_ENV"
         echo "ORT_DOCKER_CLI_ARGS=${{ inputs.docker-cli-args }}" >> "$FORGEJO_ENV"
         echo "ORT_DOCKER_IMAGE=${{ inputs.image }}" >> "$FORGEJO_ENV"
+        echo "ORT_HOME_PATH=${{ inputs.ort-home-path }}" >> "$FORGEJO_ENV"
         echo "ORT_LOG_LEVEL=${{ inputs.log-level }}" >> "$FORGEJO_ENV"
         echo "ORT_RESULTS_ANALYZER_PATH=${ORT_RESULTS_ANALYZER_PATH}" >> "$FORGEJO_ENV"
         echo "ORT_RESULTS_ARTIFACT_NAME=${ORT_RESULTS_ARTIFACT_NAME}-${SW_VERSION}" >> "$FORGEJO_ENV"
@@ -337,6 +338,46 @@ runs:
         echo "results-sbom-spdx-yml-path=${ORT_RESULTS_SBOM_SPDX_YML_PATH}" >> $FORGEJO_OUTPUT
         echo "results-scanner-path=${ORT_RESULTS_SCANNER_PATH}" >> $FORGEJO_OUTPUT
         echo "results-web-app-path=${ORT_RESULTS_WEB_APP_PATH}" >> $FORGEJO_OUTPUT
+    - name: Ensure Git is installed
+      run: |
+        if ! command -v git &> /dev/null; then
+          # Ensure sudo is installed
+          if ! command -v sudo &> /dev/null; then
+              echo "Sudo is not installed. Installing now..."
+              apt-get update
+              apt-get install -y sudo
+          fi
+
+          echo "Git not found, installing..."
+          sudo apt-get update
+          sudo apt-get install -y git
+        else
+          echo "Git is already installed."
+        fi
+    - name: Ensure Docker is installed
+      run: |
+        if [[ "$(lsb_release -is)" != "Ubuntu" ]]; then
+          if ! command -v docker &> /dev/null
+          then
+              # Ensure sudo is installed
+              if ! command -v sudo &> /dev/null; then
+                  echo "Sudo is not installed. Installing now..."
+                  apt-get update
+                  apt-get install -y sudo
+              fi
+
+              echo "Docker is not installed. Installing now..."
+              sudo apt-get update
+              sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+              sudo apt-get update
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+          else
+              echo "Docker is already installed."
+          fi
+        fi
+
     - name: Shallow clone ort-config repository if ORT_CONFIG_PATH is empty
       id: ort-config
       shell: bash
@@ -425,30 +466,6 @@ runs:
       with:
         path: "${{ env.HOME}}/${{ env.ORT_HOME_PATH }}/scanner/"
         key: ${{ runner.os }}-ort-scan-results-cache
-    # - name: Check Docker Installation
-    #   run: |
-    #     if [[ "$(lsb_release -is)" != "Ubuntu" ]]; then
-    #       if ! command -v docker &> /dev/null
-    #       then
-
-    #           # Check if sudo is installed
-    #           if ! command -v sudo &> /dev/null; then
-    #               echo "Sudo is not installed. Installing now..."
-    #               apt-get update
-    #               apt-get install -y sudo
-    #           fi
-
-    #           echo "Docker is not installed. Installing now..."
-    #           sudo apt-get update
-    #           sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-    #           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-    #           sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-    #           sudo apt-get update
-    #           sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-    #       else
-    #           echo "Docker is already installed."
-    #       fi
-    #     fi
     - name: Print ORT version
       shell: bash
       env:
@@ -495,8 +512,6 @@ runs:
         echo "SW_NAME: $SW_NAME"
         echo "SW_NAME_SAFE: $SW_NAME_SAFE"
         echo "SW_VERSION: $SW_VERSION"
-        echo -e "\e[1;33m Showing analyzer input vars..."
-        echo "docker input: ${PROJECT_PATH/${FORGEJO_ACTOR}/ort}"
         # echo -e "\e[1;33m Showing all env variables using printenv..."
         # printenv
     - name: Download project sources if vcs-url is set
@@ -526,18 +541,37 @@ runs:
         --$ORT_LOG_LEVEL \
         $ORT_CLI_ARGS \
         download \
-        -o ${PROJECT_PATH/$(id -un)/ort} \
+        -o ${PROJECT_PATH/${FORGEJO_ACTOR}/ort} \
         ${ORT_CLI_DOWNLOAD_ARGS}
+    - name: Run ORT to print its version
+      id: ort-analyzer
+      shell: bash
+      if: contains(inputs.run, 'analyzer')
+      env:
+        ORT_ALLOW_DYNAMIC_VERSIONS: ${{ inputs.allow-dynamic-versions }}
+      run: |
+        echo -e "\e[1;33m Printing ORT version... "
+        docker run \
+        --mount type=bind,src=/root,dst=/home/ort \
+        -u $(id -u):$(id -g) \
+        -e JDK_JAVA_OPTIONS="-Xmx5120m" \
+        -e ORT_DATA_DIR="/home/ort/${ORT_HOME_PATH}" \
+        $ORT_DOCKER_CLI_ARGS \
+        $ORT_DOCKER_IMAGE \
+        --version
     - name: Run ORT Analyzer
       id: ort-analyzer
       shell: bash
-      if: contains(inputs.run, 'analyzer2')
+      if: contains(inputs.run, 'analyzer')
       env:
         ORT_ALLOW_DYNAMIC_VERSIONS: ${{ inputs.allow-dynamic-versions }}
       run: |
         echo -e "\e[1;33m Running ORT Analyzer... "
+        mkdir -p $HOME/.ort/project/
+        cp -r "$PROJECT_PATH/" "$HOME/.ort/project/"
+        ls -all $HOME/.ort/project/
         docker run \
-        --mount type=bind,source=$HOME,target=/home/ort \
+        --mount type=bind,src=/root,dst=/home/ort \
         -u $(id -u):$(id -g) \
         -e JDK_JAVA_OPTIONS="-Xmx5120m" \
         -e ORT_DATA_DIR="/home/ort/${ORT_HOME_PATH}" \
@@ -547,16 +581,95 @@ runs:
         -P ort.analyzer.allowDynamicVersions=${ORT_ALLOW_DYNAMIC_VERSIONS} \
         $ORT_CLI_ARGS \
         analyze \
-        -i ${PROJECT_PATH/$(id -un)/ort} \
-        -o ${ORT_RESULTS_PATH/$(id -un)/ort} \
+        -i /home/ort/ \
+        -o /home/ort/.ort/ort-results/ \
         -f JSON \
         ${ORT_CLI_ANALYZE_ARGS} || ORT_CLI_ANALYZE_EXIT_CODE=$? \
         && ORT_CLI_ANALYZE_EXIT_CODE="${ORT_CLI_ANALYZE_EXIT_CODE:-0}" \
         && echo "ORT_CLI_ANALYZE_EXIT_CODE=${ORT_CLI_ANALYZE_EXIT_CODE}" >> "$FORGEJO_ENV"
-        [[ -f $ORT_RESULTS_ANALYZER_PATH ]] && \
-          ln -frs $ORT_RESULTS_ANALYZER_PATH $ORT_RESULTS_CURRENT_PATH || \
-          echo -e "\e[1;31m File $ORT_RESULTS_ANALYZER_PATH not found."
-        [[ $ORT_CLI_ANALYZE_EXIT_CODE -ne 2 ]] && exit ${ORT_CLI_ANALYZE_EXIT_CODE} || exit 0
+        echo -e "\e[1;33m echo ${HOME}/.ort/ort-results... "
+        ls -all $HOME/.ort/ort-results/
+        # [[ -f $ORT_RESULTS_ANALYZER_PATH ]] && \
+        #   ln -frs $ORT_RESULTS_ANALYZER_PATH $ORT_RESULTS_CURRENT_PATH || \
+        #   echo -e "\e[1;31m File $ORT_RESULTS_ANALYZER_PATH not found."
+        # [[ $ORT_CLI_ANALYZE_EXIT_CODE -ne 2 ]] && exit ${ORT_CLI_ANALYZE_EXIT_CODE} || exit 0
+    - name: Run ORT, print its version and write to file
+      id: ort-analyzer
+      shell: bash
+      if: contains(inputs.run, 'analyzer')
+      env:
+        ORT_ALLOW_DYNAMIC_VERSIONS: ${{ inputs.allow-dynamic-versions }}
+      run: |
+        echo -e "\e[1;33m Debugging why Docker is not properly mounting any dir... "
+        touch $HOME/.ort/before-docker.txt
+        touch $HOME/before-docker123.txt
+        docker run \
+        --entrypoint "/bin/bash" \
+        --mount type=bind,source=$HOME,target=/home/ort,bind-propagation=rshared \
+        -u $(id -u):$(id -g) \
+        $ORT_DOCKER_IMAGE \
+        -c "touch /home/ort/created-from-ort-docker.txt && ls -all /home/ort/"
+        echo -e "\e[1;33m Printing contents of HOME... "
+        ls -all $HOME
+    #     docker run ghcr.io/oss-review-toolkit/ort --version
+    # - name: Run docker image
+    #   id: docker image
+    #   shell: bash
+    #   run: |
+    #     #docker run -v /workspace/tsteenbe/mime-types:/project $ORT_DOCKER_IMAGE --version
+    #     # Fails :-(
+    #     docker run ghcr.io/oss-review-toolkit/ort --version
+    # - name: Run ORT Analyzer
+    #   id: ort-analyzer
+    #   shell: bash
+    #   if: contains(inputs.run, 'analyzer')
+    #   env:
+    #     ORT_ALLOW_DYNAMIC_VERSIONS: ${{ inputs.allow-dynamic-versions }}
+    #   run: |
+    #     echo "PROJECT_PATH: $PROJECT_PATH"
+    #     ls -all $PROJECT_PATH
+    #     echo "$(id -u):$(id -g)"
+    #     mkdir -p $PROJECT_PATH
+    #     chmod -R 777 $PROJECT_PATH
+    #     echo "Is PROJECT_PATH a symlink?"
+    #     if [[ -L "$PROJECT_PATH" && -d "$PROJECT_PATH" ]]
+    #     then
+    #         echo "$PROJECT_PATH is a symlink to a directory"
+    #     else
+    #         echo "$PROJECT_PATH is NOT a symlink to a directory"
+    #     fi
+    #     echo "Is /workspace a symlink?"
+    #     if [[ -L "/workspace" && -d "/workspace" ]]
+    #     then
+    #         echo "/workspace is a symlink to a directory"
+    #     else
+    #         echo "/workspace is NOT a symlink to a directory"
+    #     fi
+    #     echo -e "\e[1;33m Running ORT Analyzer... "
+    #     docker run \
+    #     --mount type=bind,src=$HOME,dst=/home/ort \
+    #     --mount type=bind,src=$PROJECT_PATH,dst=/workspace/$SW_NAME_SAFE \
+    #     -u $(id -u):$(id -g) \
+    #     -e JDK_JAVA_OPTIONS="-Xmx5120m" \
+    #     -e ORT_DATA_DIR="/home/ort/${ORT_HOME_PATH}" \
+    #     $ORT_DOCKER_CLI_ARGS \
+    #     $ORT_DOCKER_IMAGE \
+    #     --$ORT_LOG_LEVEL \
+    #     -P ort.analyzer.allowDynamicVersions=${ORT_ALLOW_DYNAMIC_VERSIONS} \
+    #     $ORT_CLI_ARGS \
+    #     analyze \
+    #     -i /workspace/SW_NAME_SAFE \
+    #     -o ${ORT_RESULTS_PATH/$USER/ort} \
+    #     -f JSON \
+    #     ${ORT_CLI_ANALYZE_ARGS} || ORT_CLI_ANALYZE_EXIT_CODE=$? \
+    #     && ORT_CLI_ANALYZE_EXIT_CODE="${ORT_CLI_ANALYZE_EXIT_CODE:-0}" \
+    #     && echo "ORT_CLI_ANALYZE_EXIT_CODE=${ORT_CLI_ANALYZE_EXIT_CODE}" >> "$FORGEJO_ENV"
+    #     echo -e "\e[1;33m echo ${HOME}/.ort/ort-results... "
+    #     ls -all $HOME/.ort/ort-results/
+    #     [[ -f $ORT_RESULTS_ANALYZER_PATH ]] && \
+    #       ln -frs $ORT_RESULTS_ANALYZER_PATH $ORT_RESULTS_CURRENT_PATH || \
+    #       echo -e "\e[1;31m File $ORT_RESULTS_ANALYZER_PATH not found."
+    #     [[ $ORT_CLI_ANALYZE_EXIT_CODE -ne 2 ]] && exit ${ORT_CLI_ANALYZE_EXIT_CODE} || exit 0
     # - name: Printenv
     #   shell: bash
     #   run: |
@@ -589,8 +702,8 @@ runs:
     #     --$ORT_LOG_LEVEL \
     #     $ORT_CLI_ARGS \
     #     scan \
-    #     -i ${ORT_RESULTS_CURRENT_PATH/$USER/ort} \
-    #     -o ${ORT_RESULTS_PATH/$USER/ort} \
+    #     -i ${ORT_RESULTS_CURRENT_PATH/${FORGEJO_ACTOR}/ort} \
+    #     -o ${ORT_RESULTS_PATH/${FORGEJO_ACTOR}/ort} \
     #     -f JSON \
     #     ${ORT_CLI_SCAN_ARGS}
     #     [[ -f $ORT_RESULTS_SCANNER_PATH ]] && \
@@ -614,8 +727,8 @@ runs:
     #     --$ORT_LOG_LEVEL \
     #     $ORT_CLI_ARGS \
     #     advise \
-    #     -i ${ORT_RESULTS_CURRENT_PATH/$USER/ort} \
-    #     -o ${ORT_RESULTS_PATH/$USER/ort} \
+    #     -i ${ORT_RESULTS_CURRENT_PATH/${FORGEJO_ACTOR}/ort} \
+    #     -o ${ORT_RESULTS_PATH/${FORGEJO_ACTOR}/ort} \
     #     -a $ORT_ADVISORS \
     #     -f JSON \
     #     ${ORT_CLI_ADVISE_ARGS} || ORT_CLI_ADVISE_EXIT_CODE=$? \
@@ -641,8 +754,8 @@ runs:
     #     --$ORT_LOG_LEVEL \
     #     $ORT_CLI_ARGS \
     #     evaluate \
-    #     -i ${ORT_RESULTS_CURRENT_PATH/$USER/ort} \
-    #     -o ${ORT_RESULTS_PATH/$USER/ort} \
+    #     -i ${ORT_RESULTS_CURRENT_PATH/${FORGEJO_ACTOR}/ort} \
+    #     -o ${ORT_RESULTS_PATH/${FORGEJO_ACTOR}/ort} \
     #     -f JSON \
     #     ${ORT_CLI_EVALUATE_ARGS} || ORT_CLI_EVALUATE_EXIT_CODE=$? \
     #     && ORT_CLI_EVALUATE_EXIT_CODE="${ORT_CLI_EVALUATE_EXIT_CODE:-0}" \
@@ -673,8 +786,8 @@ runs:
     #     --$ORT_LOG_LEVEL \
     #     $ORT_CLI_ARGS \
     #     report \
-    #     -i ${ORT_RESULTS_CURRENT_PATH/$USER/ort} \
-    #     -o ${ORT_RESULTS_PATH/$USER/ort} \
+    #     -i ${ORT_RESULTS_CURRENT_PATH/${FORGEJO_ACTOR}/ort} \
+    #     -o ${ORT_RESULTS_PATH/${FORGEJO_ACTOR}/ort} \
     #     -f $ORT_REPORT_FORMATS \
     #     -O SpdxDocument=document.name="${SW_NAME_SAFE}" \
     #     ${ORT_CLI_REPORT_ARGS}
