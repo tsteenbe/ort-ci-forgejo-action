@@ -1,0 +1,96 @@
+name: Forgejo Action for ORT tests
+
+on: [pull_request, push, workflow_dispatch]
+
+jobs:
+  ort-action-test-setup-ort:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install ORT
+        uses: ${{ forgejo.server_url }}/${{ forgejo.repository }}@${{ forgejo.sha }}
+        with:
+          run: setup-ort
+      - name: Check ORT install, fail CI if not found
+        shell: bash
+        run: |
+          if ! command -v ort &> /dev/null; then
+            exit 1
+          fi
+      - name: Print Forgejo Action for ORT outputs variables
+        shell: bash
+        run: |
+          echo "orth-dist-archive-url: ${{ steps.ort.outputs.orth-dist-archive-url }}"
+          echo "orth-version: ${{ steps.ort.outputs.orth-version }}"
+  ort-action-test-setup-orth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install ORT helper
+        uses: ${{ forgejo.server_url }}/${{ forgejo.repository }}@${{ forgejo.sha }}
+        with:
+          run: setup-orth
+      - name: Check ORT helper install, fail CI if not found
+        shell: bash
+        run: |
+          if ! command -v orth &> /dev/null; then
+            exit 1
+          fi
+      - name: Print Forgejo Action for ORT outputs variables
+        shell: bash
+        run: |
+          echo "orth-dist-archive-url: ${{ steps.ort.outputs.orth-dist-archive-url }}"
+          echo "orth-version: ${{ steps.ort.outputs.orth-version }}"
+  ort-action-test-analyze-python-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a synthetic Python test project
+        run: |
+          cat << 'EOF' > $FORGEJO_WORKSPACE/requirements.txt
+          click==6.7
+          Flask==1.0
+          itsdangerous==0.24
+          EOF
+      - name: Create a .ort.yml file
+        run: |
+          cat << 'EOF' > $FORGEJO_WORKSPACE/.ort.yml
+          ---
+          curations:
+            packages:
+            - id: "PyPI::jinja2"
+              curations:
+                comment: |
+                  Mapping based on https://github.com/pallets/jinja/blob/3.1.6/pyproject.toml#L11
+                  and https://github.com/pallets/jinja/blob/3.1.6/LICENSE.txt.
+                declared_license_mapping:
+                  "BSD License": "BSD-3-Clause"
+          EOF
+      - name: Run Forgejo Action for ORT to analyze synthetic Python project
+        id: ort
+        uses: ${{ forgejo.server_url }}/${{ forgejo.repository }}@${{ forgejo.sha }}
+      - name: Print Forgejo Action for ORT outputs variables
+        shell: bash
+        run: |
+          echo "dist-archive-url: ${{ steps.ort.outputs.dist-archive-url }}"
+          echo "ort-cli-advise-args: ${{ steps.ort.outputs.ort-cli-evaluate-args }}"
+          echo "ort-cli-analyze-args: ${{ steps.ort.outputs.ort-cli-analyze-args }}"
+          echo "ort-cli-evaluate-args: ${{ steps.ort.outputs.ort-cli-evaluate-args }}"
+          echo "ort-cli-report-args: ${{ steps.ort.outputs.ort-cli-report-args }}"
+          echo "ort-cli-scan-args: ${{ steps.ort.outputs.ort-cli-scan-args }}"
+          echo "ort-config-path: ${{ steps.ort.outputs.ort-config-path }}"
+          echo "ort-config-vcs-revision: ${{ steps.ort.outputs.ort-config-vcs-revision }}"
+          echo "ort-config-vcs-url: ${{ steps.ort.outputs.ort-config-vcs-url }}"
+          echo "ort-version: ${{ steps.ort.outputs.ort-version }}"
+          echo "results-advisor-path: ${{ steps.ort.outputs.results-advisor-path }}"
+          echo "results-analyzer-path: ${{ steps.ort.outputs.results-analyzer-path }}"
+          echo "results-evaluated-model-path: ${{ steps.ort.outputs.results-evaluated-model-path }}"
+          echo "results-evaluator-path: ${{ steps.ort.outputs.results-evaluator-path }}"
+          echo "results-path: ${{ steps.ort.outputs.results-path }}"
+          echo "results-report-html-path: ${{ steps.ort.outputs.results-report-html-path }}"
+          echo "results-report-web-app-path: ${{ steps.ort.outputs.results-report-web-app-path }}"
+          echo "results-sbom-cyclonedx-json-path: ${{ steps.ort.outputs.results-sbom-cyclonedx-json-path }}"
+          echo "results-sbom-cyclonedx-xml-path: ${{ steps.ort.outputs.results-sbom-cyclonedx-xml-path }}"
+          echo "results-sbom-spdx-json-path: ${{ steps.ort.outputs.results-sbom-spdx-json-path }}"
+          echo "results-sbom-spdx-yml-path: ${{ steps.ort.outputs.results-sbom-spdx-yml-path }}"
+          echo "results-scanner-path: ${{ steps.ort.outputs.results-scanner-path }}"
+          echo "sw-name: ${{ steps.ort.outputs.sw-name }}"
+          echo "sw-name-safe: ${{ steps.ort.outputs.sw-name-safe }}"
+          echo "sw-version: ${{ steps.ort.outputs.sw-version }}"
